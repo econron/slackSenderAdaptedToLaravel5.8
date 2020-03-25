@@ -1,74 +1,45 @@
 <?php
 
-namespace App\Console;
+namespace App\Http\Controllers;
 
-use Illuminate\Console\Scheduling\Schedule;
-use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
-use Illuminate\Support\Facades\DB;
 use DateTime;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
-class Kernel extends ConsoleKernel
+class SendRemindsController extends Controller
 {
-    /**
-     * The Artisan commands provided by your application.
-     *
-     * @var array
-     */
-    protected $commands = [
-        //
-    ];
+    public function send_remind(){
+        $reminds = DB::table('reminds')->get();
 
-    /**
-     * Define the application's command schedule.
-     *
-     * @param  \Illuminate\Console\Scheduling\Schedule  $schedule
-     * @return void
-     */
-    protected function schedule(Schedule $schedule)
-    {
-        $schedule->call(function () {
-            $reminds = DB::table('reminds')->get();
+        foreach($reminds as $remind){
+            // Webhook URL
+            $url = $remind->webhook_address;
 
-            foreach($reminds as $remind){
-                // Webhook URL
-                $url = $remind->webhook_address;
+            //締め切り日まであと何営業日あるかを確認する処理をした上でtextに渡す。
+            $deadline = $remind->deadline;
+            $rest_days = $this->rest_days($deadline);
 
-                //締め切り日まであと何営業日あるかを確認する処理をした上でtextに渡す。
-                $deadline = $remind->deadline;
-                $rest_days = $this->rest_days($deadline);
+            // メッセージ
+            $message = array(
+                "username"   => "締め切りの神様",
+                "icon_emoji" => ":slack:",
+                "attachments" => array(
+                    array(
+                        "text" =>
+                            "<!here> \n$remind->remind_content \n締め切り日は$deadline".
+                            "です。"."\n締め切りまで$rest_days".
+                            "営業日です。\n本日も頑張りましょう。" ,
+                    ),
+                )
+            );
 
-                // メッセージ
-                $message = array(
-                    "username"   => "UPCROSS締め切りの神様",
-                    "icon_emoji" => ":slack:",
-                    "attachments" => array(
-                        array(
-                            "text" =>
-                                "<!here> \n$remind->remind_content \n締め切り日は$deadline".
-                                "です。"."\n締め切りまで$rest_days".
-                                "営業日です。\n本日も頑張りましょう。" ,
-                        ),
-                    )
-                );
+            //メッセージをスラックに送る処理
+            $this->curl_slack($message, $url);
 
-                //メッセージをスラックに送る処理
-                $this->curl_slack($message, $url);
+        }
 
-            }
+        return view('sendcomplete');
 
-        })->weekdays()->at('10:00');
-    }
-
-    /**
-     * Register the commands for the application.
-     *
-     * @return void
-     */
-    protected function commands()
-    {
-        $this->load(__DIR__.'/Commands');
-
-        require base_path('routes/console.php');
     }
 
     public function rest_days($deadline){
@@ -98,8 +69,8 @@ class Kernel extends ConsoleKernel
         //csvファイルから1行読み出すごとに
         //①国民の休日に１ついれる
         //②配列番号を増やす
-        foreach ($national_holidays_csv as $national_holiday){
-            $national_holidays[$number_in_national_holidays] = $national_holiday[0];
+        foreach ($national_holidays_csv as $national_holiday_csv){
+            $national_holidays[$number_in_national_holidays] = $national_holiday_csv[0];
             $number_in_national_holidays++;
         }
 
@@ -142,3 +113,4 @@ class Kernel extends ConsoleKernel
         curl_close($ch);
     }
 }
+
